@@ -11,7 +11,7 @@ WIDTH = 800
 HEIGHT = 600
 FPS = 60
 GRAVITY = 0.9
-BOUNCE_FACTOR = 0.7
+BOUNCE_FACTOR = 0.8
 FRICTION = 0.98
 
 # Цвета
@@ -31,6 +31,11 @@ screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Merge Fruit")
 clock = pygame.time.Clock()
 
+BASKET_WIDTH = 300
+BASKET_HEIGHT = 200
+BASKET_TOP = HEIGHT - BASKET_HEIGHT - 50
+BASKET_RECT = pygame.Rect((WIDTH//2 - BASKET_WIDTH//2, BASKET_TOP), 
+                        (BASKET_WIDTH, BASKET_HEIGHT))
 # Шрифты
 font = pygame.font.SysFont('Arial', 36)
 
@@ -70,31 +75,43 @@ class Ball:
         # Проверка столкновения с нижней границей (игра заканчивается)
         if self.y + self.radius >= HEIGHT:
             return "game_over"
-            
-        # Проверка столкновения с перевернутой параболой (корзиной)
-        # Уравнение перевернутой параболы: y = -a*(x - h)^2 + k
-        a = 0.01  # Крутизна параболы
-        h = WIDTH // 2  # Центр по x
-        k = HEIGHT - 150  # Высота вершины параболы
-        parabola_y = -a * (self.x - h)**2 + k
+
+        # Улучшенная проверка коллизий с корзиной
+        # Проверка левой стенки
+        if (self.x - self.radius < BASKET_RECT.left 
+            and BASKET_RECT.top <= self.y <= BASKET_RECT.bottom):
+            self.x = BASKET_RECT.left + self.radius
+            self.speed_x *= -BOUNCE_FACTOR
         
-        if self.y + self.radius >= parabola_y:
-            # Корректируем позицию шарика
-            self.y = parabola_y - self.radius
+        # Проверка правой стенки
+        elif (self.x + self.radius > BASKET_RECT.right 
+            and BASKET_RECT.top <= self.y <= BASKET_RECT.bottom):
+            self.x = BASKET_RECT.right - self.radius
+            self.speed_x *= -BOUNCE_FACTOR
+        
+        # Проверка нижней стенки
+        if (BASKET_RECT.left <= self.x <= BASKET_RECT.right 
+            and self.y + self.radius > BASKET_RECT.bottom):
+            self.y = BASKET_RECT.bottom - self.radius
             self.speed_y *= -BOUNCE_FACTOR
             self.speed_x *= FRICTION
             
-            # Если скорость очень мала, останавливаем шарик
             if abs(self.speed_y) < 1:
-                self.speed_y = 0
-                self.on_ground = True
+                # Проверяем, находится ли шарик внутри корзины
+                in_basket_x = BASKET_RECT.left <= self.x <= BASKET_RECT.right
+                in_basket_y = BASKET_RECT.top <= self.y <= BASKET_RECT.bottom
+                if in_basket_x and in_basket_y:
+                    self.speed_y = 0
+                    self.on_ground = True
+                else:
+                    return "game_over"  # Шарик остановился вне корзины
         
-        # Проверка столкновений с другими шариками
+        # Улучшенная физика столкновений шариков
         for other in balls:
             if other != self and other.active:
                 dx = other.x - self.x
                 dy = other.y - self.y
-                distance = math.sqrt(dx*dx + dy*dy)
+                distance = math.hypot(dx, dy)
                 
                 if distance < self.radius + other.radius:
                     if self.size_idx == other.size_idx and self.size_idx < len(BALL_SIZES) - 1:
@@ -111,42 +128,23 @@ class Ball:
                         self.speed_y = -math.sin(angle) * force
                         self.on_ground = False
                     else:
-                        # Физика столкновения - упругое отталкивание
-                        angle = math.atan2(dy, dx)
+                        # Новый расчет физики столкновений
+                        norm = math.hypot(dx, dy)
+                        nx = dx / norm
+                        ny = dy / norm                        
+                        p = 2 * (self.speed_x * nx + self.speed_y * ny - other.speed_x * nx - other.speed_y * ny) / (self.radius + other.radius)
+                        
+                        self.speed_x = (self.speed_x - p * other.radius * nx) * BOUNCE_FACTOR
+                        self.speed_y = (self.speed_y - p * other.radius * ny) * BOUNCE_FACTOR
+                        other.speed_x = (other.speed_x + p * self.radius * nx) * BOUNCE_FACTOR
+                        other.speed_y = (other.speed_y + p * self.radius * ny) * BOUNCE_FACTOR
+                        
+                        # Корректировка позиций
                         overlap = (self.radius + other.radius) - distance
-                        
-                        # Раздвигаем шарики
-                        move_x = math.cos(angle) * overlap * 0.5
-                        move_y = math.sin(angle) * overlap * 0.5
-                        
-                        self.x -= move_x
-                        self.y -= move_y
-                        other.x += move_x
-                        other.y += move_y
-                        
-                        # Обмен импульсами
-                        m1 = self.radius ** 2
-                        m2 = other.radius ** 2
-                        total_mass = m1 + m2
-                        
-                        v1x = self.speed_x
-                        v1y = self.speed_y
-                        v2x = other.speed_x
-                        v2y = other.speed_y
-                        
-                        # Новые скорости после столкновения
-                        new_v1x = (v1x*(m1 - m2) + 2*m2*v2x) / total_mass
-                        new_v1y = (v1y*(m1 - m2) + 2*m2*v2y) / total_mass
-                        new_v2x = (v2x*(m2 - m1) + 2*m1*v1x) / total_mass
-                        new_v2y = (v2y*(m2 - m1) + 2*m1*v1y) / total_mass
-                        
-                        self.speed_x = new_v1x * BOUNCE_FACTOR
-                        self.speed_y = new_v1y * BOUNCE_FACTOR
-                        other.speed_x = new_v2x * BOUNCE_FACTOR
-                        other.speed_y = new_v2y * BOUNCE_FACTOR
-                        
-                        self.on_ground = False
-                        other.on_ground = False
+                        self.x -= overlap * nx * 0.5
+                        self.y -= overlap * ny * 0.5
+                        other.x += overlap * nx * 0.5
+                        other.y += overlap * ny * 0.5
         
         return None
 
@@ -159,49 +157,64 @@ def draw_trajectory(start_pos, end_pos):
     x0, y0 = start_pos
     x1, y1 = end_pos
     
-    # Симуляция траектории
     speed_y = 0
     speed_x = (x1 - x0) * 0.1
     y = y0
     x = x0
     points.append((x, y))
     
-    for _ in range(100):  # 100 шагов симуляции
+    for _ in range(100):
         speed_y += GRAVITY
         y += speed_y
         x += speed_x
         speed_x *= FRICTION
-        points.append((x, y))
         
-        # Проверка столкновения с перевернутой параболой
-        a = 0.0015
-        h = WIDTH // 2
-        k = HEIGHT - 250
-        parabola_y = -a * (x - h)**2 + k
+        # Проверка коллизий с корзиной для траектории
+        radius = 20  # Размер шарика в предсказании
         
-        if y + 20 >= parabola_y:
-            y = parabola_y - 20
+        # Левая стенка
+        if x - radius < BASKET_RECT.left and BASKET_RECT.top <= y <= BASKET_RECT.bottom:
+            x = BASKET_RECT.left + radius
+            speed_x *= -BOUNCE_FACTOR
+        
+        # Правая стенка
+        elif x + radius > BASKET_RECT.right and BASKET_RECT.top <= y <= BASKET_RECT.bottom:
+            x = BASKET_RECT.right - radius
+            speed_x *= -BOUNCE_FACTOR
+        
+        # Нижняя стенка
+        if BASKET_RECT.left <= x <= BASKET_RECT.right and y + radius > BASKET_RECT.bottom:
+            y = BASKET_RECT.bottom - radius
             speed_y *= -BOUNCE_FACTOR
             speed_x *= FRICTION
+        
+        points.append((x, y))
     
-    # Рисуем траекторию
     if len(points) > 1:
         pygame.draw.lines(screen, TRAJECTORY_COLOR, False, points, 1)
     
-    # Рисуем шарик в конечной позиции
     pygame.draw.circle(screen, TRAJECTORY_COLOR, (int(x), int(y)), 20)
 
 def draw_basket():
-    # Рисуем перевернутую параболу (корзину)
-    a = 0.01
-    h = WIDTH // 2
-    k = HEIGHT - 150
-    points = []
-    for x in range(250, WIDTH-250):
-        y = -a * (x - h)**2 + k
-        points.append((x, y))
-    if len(points) > 1:
-        pygame.draw.lines(screen, BASKET_COLOR, False, points, 3)
+    # Рисуем корзину в виде перевернутой П
+    # Боковые стенки
+    pygame.draw.line(screen, BASKET_COLOR, 
+                    (BASKET_RECT.left, BASKET_RECT.top),
+                    (BASKET_RECT.left, BASKET_RECT.bottom), 3)
+    pygame.draw.line(screen, BASKET_COLOR,
+                    (BASKET_RECT.right, BASKET_RECT.top),
+                    (BASKET_RECT.right, BASKET_RECT.bottom), 3)
+    
+    # Нижняя стенка
+    pygame.draw.line(screen, BASKET_COLOR,
+                    (BASKET_RECT.left, BASKET_RECT.bottom),
+                    (BASKET_RECT.right, BASKET_RECT.bottom), 3)
+    
+    # Пунктирная верхняя граница
+    dash_length = 10
+    for x in range(BASKET_RECT.left, BASKET_RECT.right, dash_length*2):
+        pygame.draw.line(screen, BASKET_COLOR, (x, BASKET_RECT.top),
+                        (x + dash_length, BASKET_RECT.top), 2)
 
 def draw_game_over():
     overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
