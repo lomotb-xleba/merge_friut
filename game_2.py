@@ -11,7 +11,7 @@ BASKET_WIDTH = 600
 HEIGHT = 800
 FPS = 60
 GRAVITY = 0.9
-BOUNCE_FACTOR = 0.7
+BOUNCE_FACTOR = 0.5
 FRICTION = 0.98
 BASKET_HEIGHT = 400
 BALL_SIZES = [20, 30, 40, 50, 60, 70, 80, 90, 100, 110]
@@ -28,7 +28,7 @@ clock = pygame.time.Clock()
 # Корзина
 BASKET_TOP = HEIGHT - BASKET_HEIGHT - 20
 BASKET_RECT = pygame.Rect(0, BASKET_TOP, BASKET_WIDTH, BASKET_HEIGHT)
-UPPER_LIMIT = BASKET_TOP - 50  # Верхняя граница
+UPPER_LIMIT = BASKET_TOP +10  # Верхняя граница
 
 # Шрифты
 font = pygame.font.SysFont('Arial', 36, bold=True)
@@ -78,7 +78,7 @@ class Ball:
             self.speed_x *= -BOUNCE_FACTOR
 
         # Проверка верхней границы
-        if self.y + self.radius < UPPER_LIMIT and not countdown_active:
+        if self.y - self.radius < UPPER_LIMIT and not countdown_active:
             countdown_active = True
             countdown_start = pygame.time.get_ticks()
 
@@ -91,10 +91,10 @@ class Ball:
             
             if abs(self.speed_y) < 1:
                 self.speed_y = 0
-                self.on_ground = True
-                if not self.added_to_score:
-                    score += self.size_idx + 1
-                    self.added_to_score = True
+                #self.on_ground = True
+        if not self.added_to_score:
+            score += self.size_idx + 1
+            self.added_to_score = True
         # Улучшенная проверка коллизий с корзиной
         # Проверка левой стенки
         if (self.x - self.radius < BASKET_RECT.left 
@@ -109,20 +109,20 @@ class Ball:
             self.speed_x *= -BOUNCE_FACTOR
         
         # Проверка нижней стенки
-        if (BASKET_RECT.left <= self.x <= BASKET_RECT.right 
-            and self.y + self.radius > BASKET_RECT.bottom):
-            self.y = BASKET_RECT.bottom - self.radius
-            self.speed_y *= -BOUNCE_FACTOR
-            self.speed_x *= FRICTION
+        # if (BASKET_RECT.left <= self.x <= BASKET_RECT.right 
+        #     and self.y + self.radius > BASKET_RECT.bottom):
+        #     self.y = BASKET_RECT.bottom - self.radius
+        #     self.speed_y *= -BOUNCE_FACTOR
+        #     self.speed_x *= FRICTION
             
-            if abs(self.speed_y) < 1:
-                # Усиленная проверка позиции шарика
-                in_basket_x = BASKET_RECT.left + self.radius <= self.x <= BASKET_RECT.right - self.radius
-                in_basket_y = BASKET_RECT.top + self.radius <= self.y <= BASKET_RECT.bottom - self.radius
-                if not (in_basket_x and in_basket_y):
-                    return "game_over"
-                self.speed_y = 0
-                self.on_ground = True
+        #     if abs(self.speed_y) < 1:
+        #         # Усиленная проверка позиции шарика
+        #         in_basket_x = BASKET_RECT.left + self.radius <= self.x <= BASKET_RECT.right - self.radius
+        #         in_basket_y = BASKET_RECT.top + self.radius <= self.y <= BASKET_RECT.bottom - self.radius
+        #         if not (in_basket_x and in_basket_y):
+        #             return "game_over"
+        #         self.speed_y = 0
+        #         self.on_ground = True
         
         # Улучшенная физика столкновений шариков
         for other in balls:
@@ -137,6 +137,8 @@ class Ball:
                         self.size_idx += 1
                         self.radius = BALL_SIZES[self.size_idx]
                         self.color = COLORS[self.size_idx]
+                        score += self.size_idx + 1
+                        self.added_to_score = True
                         other.active = False
                         
                         # Добавляем эффект отталкивания при слиянии
@@ -152,21 +154,21 @@ class Ball:
                         ny = dy / norm                        
                         p = 2 * (self.speed_x * nx + self.speed_y * ny - other.speed_x * nx - other.speed_y * ny) / (self.radius + other.radius)
                         
-                        self.speed_x = (self.speed_x - p * other.radius * nx) * BOUNCE_FACTOR
-                        self.speed_y = (self.speed_y - p * other.radius * ny) * BOUNCE_FACTOR
-                        other.speed_x = (other.speed_x + p * self.radius * nx) * BOUNCE_FACTOR
-                        other.speed_y = (other.speed_y + p * self.radius * ny) * BOUNCE_FACTOR
+                        self.speed_x = (self.speed_x - p * other.radius * nx) * BOUNCE_FACTOR * FRICTION
+                        self.speed_y = (self.speed_y - p * other.radius * ny) * BOUNCE_FACTOR * GRAVITY
+                        other.speed_x = (other.speed_x + p * self.radius * nx) * BOUNCE_FACTOR * FRICTION 
+                        other.speed_y = (other.speed_y + p * self.radius * ny) * BOUNCE_FACTOR * GRAVITY
                         
                         # Корректировка позиций
                         overlap = (self.radius + other.radius) - distance
-                        self.x -= overlap * nx * 0.5
-                        self.y -= overlap * ny * 0.5
-                        other.x += overlap * nx * 0.5
-                        other.y += overlap * ny * 0.5
+                        self.x -= overlap * nx * FRICTION
+                        self.y -= overlap * ny * GRAVITY
+                        other.x += overlap * nx * FRICTION
+                        other.y += overlap * ny * GRAVITY
         
-        # При остановке в корзине добавляем в счет
+        #При остановке в корзине добавляем в счет
         # if self.on_ground and not self.added_to_score:
-        #     global score
+        #     #global score
         #     score += self.size_idx + 1
         #     self.added_to_score = True
 
@@ -263,7 +265,7 @@ while True:
         
         # Проверка высоты шариков
         for ball in balls:
-            if ball.y + ball.radius < UPPER_LIMIT:
+            if ball.y - ball.radius <= UPPER_LIMIT:
                 break
         else:
             countdown_active = False
